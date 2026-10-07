@@ -1,6 +1,7 @@
 import atexit
 import json
 import os
+import secrets
 import sys
 import tempfile
 import uuid
@@ -54,6 +55,28 @@ def auth_headers(email: str, password: str) -> dict[str, str]:
     response = client.post("/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200
     return {"Authorization": f"Bearer {response.json()['token']}"}
+
+
+def create_test_operator(name: str = "Test Operator") -> tuple[str, str, dict[str, str]]:
+    email = f"operator-{uuid.uuid4().hex}@example.com"
+    password = secrets.token_urlsafe(24)
+    admin_headers = auth_headers(
+        "test-admin@example.com",
+        "Test-Only-Admin-Password-123",
+    )
+    response = client.post(
+        "/auth/register",
+        json={"name": name, "email": email, "password": password},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["user"]["role"] == "operator"
+    login = client.post(
+        "/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert login.status_code == 200
+    return email, password, {"Authorization": f"Bearer {login.json()['token']}"}
 
 
 def test_healthcheck():
@@ -292,17 +315,49 @@ def test_production_configuration_requires_bootstrap_admin():
         )
 
 
-def test_register_and_login():
-    email = f"test-{uuid.uuid4().hex[:8]}@example.com"
-    payload = {"name": "Test User", "email": email, "password": "SecretPassword123"}
-    response = client.post("/auth/register", json=payload)
-    assert response.status_code == 200
-    token = response.json()["token"]
-    assert token
+def test_registration_requires_admin_authentication():
+    payload = {
+        "name": "Unauthenticated Operator",
+        "email": f"unauthorized-{uuid.uuid4().hex[:8]}@example.com",
+        "password": "NeverStoredAsPlaintext123",
+    }
 
-    login_response = client.post("/auth/login", json={"email": payload["email"], "password": payload["password"]})
-    assert login_response.status_code == 200
-    assert login_response.json()["token"]
+    response = client.post("/auth/register", json=payload)
+
+    assert response.status_code == 401
+
+
+def test_admin_can_create_three_operators_and_each_can_login():
+    emails = set()
+    for index in range(3):
+        email, _, operator_headers = create_test_operator(f"E2E Operator {index + 1}")
+        emails.add(email)
+        assert client.post(
+            "/machines",
+            json={
+                "machine_code": f"OP-{uuid.uuid4().hex[:8]}",
+                "machine_name": "Unauthorized Operator Machine",
+                "location": "Test Plant",
+            },
+            headers=operator_headers,
+        ).status_code == 403
+    assert len(emails) == 3
+
+
+def test_operator_cannot_provision_another_operator():
+    _, _, operator_headers = create_test_operator("Operator Provisioner")
+
+    response = client.post(
+        "/auth/register",
+        json={
+            "name": "Another Operator",
+            "email": f"other-{uuid.uuid4().hex[:8]}@example.com",
+            "password": "AnotherOperatorPassword123",
+        },
+        headers=operator_headers,
+    )
+
+    assert response.status_code == 403
 
 
 def test_prediction_with_valid_input():
@@ -446,13 +501,7 @@ def test_protected_endpoints_reject_requests_without_token(method, path, payload
 
 
 def test_operator_can_read_and_predict_but_cannot_manage_machines():
-    email = f"operator-{uuid.uuid4().hex[:8]}@example.com"
-    registration = client.post(
-        "/auth/register",
-        json={"name": "Test Operator", "email": email, "password": "OperatorPassword123"},
-    )
-    assert registration.status_code == 200
-    headers = {"Authorization": f"Bearer {registration.json()['token']}"}
+    _, _, headers = create_test_operator()
 
     assert client.get("/machines", headers=headers).status_code == 200
     assert client.get("/predictions", headers=headers).status_code == 200
@@ -967,16 +1016,7 @@ def test_dashboard_uses_latest_prediction_per_machine_and_counts_unpredicted():
 
 
 def test_end_to_end_login_machine_prediction_history_dashboard():
-    registration = client.post(
-        "/auth/register",
-        json={
-            "name": "Integration Operator",
-            "email": f"integration-{uuid.uuid4().hex[:8]}@example.com",
-            "password": "IntegrationPassword123",
-        },
-    )
-    assert registration.status_code == 200
-    headers = {"Authorization": "Bearer " + registration.json()["token"]}
+    _, _, headers = create_test_operator("Integration Operator")
 
     machines_response = client.get("/machines", headers=headers)
     assert machines_response.status_code == 200

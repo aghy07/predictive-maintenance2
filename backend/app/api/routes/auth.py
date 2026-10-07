@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.dependencies import require_roles
 from app.core.db import get_db
 from app.schemas.user import UserCreate, UserLogin
 from app.services.auth_service import authenticate_user, create_user, issue_token
@@ -8,14 +9,23 @@ from app.services.auth_service import authenticate_user, create_user, issue_toke
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/register")
-def register(payload: UserCreate, db: Session = Depends(get_db)):
+@router.post("/register", dependencies=[Depends(require_roles("admin"))])
+def register(
+    payload: UserCreate,
+    db: Session = Depends(get_db),
+):
     try:
         user = create_user(db, payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    token = issue_token(user)
-    return {"token": token, "user": {"id": user.id, "name": user.name, "email": user.email, "role": user.role}}
+    return {
+        "user": {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "role": user.role,
+        }
+    }
 
 
 @router.post("/login")

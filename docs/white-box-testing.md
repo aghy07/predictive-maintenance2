@@ -7,7 +7,7 @@ White-box testing validates internal logic, decision branches, and failure paths
 - health-only endpoint availability
 - readiness requires an active database connection and verified model artifacts
 - production configuration rejects SQLite, missing bootstrap-admin credentials, and non-HTTPS frontend origins
-- registration logic of a new user
+- admin-only operator provisioning; unauthenticated and operator requests are rejected
 - login success and failure conditions
 - prediction request validation
 - refusal of negative and non-finite sensor values
@@ -27,7 +27,8 @@ White-box testing validates internal logic, decision branches, and failure paths
 |---|---|---|
 | healthcheck | GET /health | HTTP 200 and ok status |
 | readiness | GET /ready with database and model available | HTTP 200 and both dependencies reported ready |
-| register | valid user payload | token issued and user created |
+| operator provisioning | admin POST /auth/register with a valid user payload | operator created without returning an operator token |
+| registration authorization | no token or operator token on POST /auth/register | HTTP 401 or 403 |
 | login | valid credentials | authenticated response |
 | prediction | valid sensor input and existing machine | one stored result with probability, risk, and warnings |
 | prediction boundary | probability at 0.39, 0.40, 0.41, 0.59, 0.60, 0.61, 0.79, 0.80, 0.81 | correct metadata-backed risk band |

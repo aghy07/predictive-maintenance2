@@ -4,6 +4,7 @@ Prototype web application for machine-maintenance decision support and early ris
 
 ## Features
 - JWT login and role-based authorization (admin/operator)
+- Admin-only operator account provisioning; public self-registration is disabled
 - Machine management and machine selection
 - Sensor-based prediction with probability, risk category, recommendation, and range warnings
 - Prediction history and dashboard aggregations

@@ -80,6 +80,7 @@ Expected revision: `0001_initial_schema`; expected tables: all four listed above
    - `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD`, `BOOTSTRAP_ADMIN_NAME`
 5. Deploy. No migration runs on API startup or request. Verify `/health` and `/ready` after migration and configuration.
 6. Create a unique admin password in the provider dashboard. The legacy `admin@predictive.com` user is disabled unless explicitly configured as bootstrap admin.
+7. Create operator accounts by calling `POST /auth/register` with the admin Bearer token and each operator's name, valid email, and password. The endpoint is admin-only, always assigns the `operator` role, and does not return an operator token. Public/self-registration is not enabled. Keep operator passwords in an approved password manager or provide them to operators through a secure channel; never commit or document them.
 
 The model and metadata files are each a few MB together and are bundled inside the backend project root. Training artifacts remain canonical in `ml/`; a backend test checks that their byte hashes match the copies in `backend/ml/`. After retraining, synchronize both backend copies and run the artifact integrity test before deploying. Vercel's current Python runtime documentation lists a 500 MB uncompressed standard function bundle limit; actual deployment build remains the final confirmation because dependencies contribute to bundle size.
 
