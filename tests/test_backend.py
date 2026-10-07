@@ -118,10 +118,16 @@ def test_production_configuration_rejects_sqlite():
         )
 
 
-def test_production_configuration_normalizes_standard_postgresql_url():
-    database_url = (
-        "postgresql://user:password@aws-0-region.pooler.supabase.com:6543/test"
-    )
+@pytest.mark.parametrize(
+    "pooler_host",
+    [
+        "aws-0-ap-southeast-1.pooler.supabase.com",
+        "aws-1-us-east-2.pooler.supabase.com",
+        "POOLER.SUPABASE.COM",
+    ],
+)
+def test_production_configuration_normalizes_standard_postgresql_url(pooler_host):
+    database_url = f"postgresql://user:placeholder@{pooler_host}:6543/test"
     settings = Settings(
         app_env="production",
         database_url=database_url,
@@ -136,6 +142,29 @@ def test_production_configuration_normalizes_standard_postgresql_url():
         1,
     )
     assert create_engine(settings.database_url).dialect.driver == "psycopg"
+
+
+@pytest.mark.parametrize(
+    "pooler_host",
+    [
+        "aws-0-ap-southeast-1.pooler.supabase.com",
+        "aws-1-us-east-2.pooler.supabase.com",
+    ],
+)
+def test_production_configuration_accepts_generic_transaction_pooler_hostnames(
+    pooler_host,
+):
+    database_url = f"postgresql+psycopg://user:placeholder@{pooler_host}:6543/test"
+    settings = Settings(
+        app_env="production",
+        database_url=database_url,
+        secret_key="production-test-secret-that-is-not-real",
+        frontend_url="https://frontend.example.com",
+        bootstrap_admin_email="admin@example.com",
+        bootstrap_admin_password="production-test-password",
+    )
+
+    assert settings.database_url == database_url
 
 
 def test_production_configuration_accepts_psycopg_url_without_changes():

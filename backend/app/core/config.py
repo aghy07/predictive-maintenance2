@@ -47,9 +47,13 @@ class Settings(BaseSettings):
                     "Production requires a PostgreSQL psycopg URL; SQLite is not supported"
                 )
             database = make_url(self.database_url)
+            database_host = (database.host or "").lower().rstrip(".")
+            pooler_domain = "pooler.supabase.com"
             if (
-                not database.host
-                or not database.host.endswith(".pooler.supabase.com")
+                not (
+                    database_host == pooler_domain
+                    or database_host.endswith(f".{pooler_domain}")
+                )
                 or database.port != 6543
             ):
                 raise ValueError(
