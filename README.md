@@ -26,9 +26,9 @@ The repository has separate Vercel configurations: `frontend/` for the static SP
 The current v2.0 Random Forest and its metadata are stored in `ml/`. The 1,800-row training dataset is synthetic and intended for demonstration. See [docs/ml-pipeline.md](docs/ml-pipeline.md) for the leakage checks, model comparison, threshold policy, holdout results, and limitations. The model is a decision-support prototype, not validated against real industrial equipment.
 
 ## Database
-Local development and automated tests may use SQLite. Production mode requires a `postgresql+psycopg://` URL, configured using `DATABASE_URL`; use a Supabase connection string copied from its dashboard and do not store it in source control or frontend configuration.
+Local development and automated tests may use SQLite. Production mode requires the Supabase Shared Transaction Pooler at port `6543`, configured using `DATABASE_URL`; use the connection string from Supabase **Connect**. The app normalizes the standard `postgresql://` scheme to `postgresql+psycopg://` in production and rejects direct Supabase or non-transaction pooler endpoints. Never store the URL in source control or frontend configuration.
 
-For Vercel serverless requests, the backend uses SQLAlchemy `NullPool`; for the psycopg transaction pooler it disables prepared statements. Run Alembic separately before enabling the API. Do not run a migration inside an API invocation.
+For Vercel serverless requests, the backend uses SQLAlchemy `NullPool`; for the psycopg transaction pooler it disables prepared statements. Replace the Vercel backend `DATABASE_URL` with the Supabase Shared Pooler Transaction URL (port `6543`). Run Alembic separately before enabling the API. Do not run a migration inside an API invocation.
 
 ## Local development and tests
 Backend:

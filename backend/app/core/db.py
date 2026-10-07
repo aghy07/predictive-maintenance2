@@ -2,6 +2,7 @@ import os
 from typing import Any
 
 from sqlalchemy import create_engine, event
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.pool import NullPool
 
@@ -11,15 +12,22 @@ settings = get_settings()
 
 
 def _engine_options(database_url: str, *, serverless: bool) -> dict[str, Any]:
-    is_sqlite = database_url.startswith("sqlite")
+    parsed_url = make_url(database_url)
+    is_sqlite = parsed_url.get_backend_name() == "sqlite"
     options = {
         "connect_args": {"check_same_thread": False} if is_sqlite else {},
         "pool_pre_ping": not is_sqlite,
     }
     if serverless:
         options["poolclass"] = NullPool
-        if database_url.startswith("postgresql+psycopg://"):
-            options["connect_args"] = {"prepare_threshold": None}
+    if (
+        parsed_url.drivername == "postgresql+psycopg"
+        and parsed_url.port == 6543
+    ):
+        options["connect_args"] = {
+            **options["connect_args"],
+            "prepare_threshold": None,
+        }
     return options
 
 

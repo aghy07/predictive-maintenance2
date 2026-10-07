@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 
 class Settings(BaseSettings):
@@ -44,6 +45,15 @@ class Settings(BaseSettings):
             if not self.database_url.startswith("postgresql+psycopg://"):
                 raise ValueError(
                     "Production requires a PostgreSQL psycopg URL; SQLite is not supported"
+                )
+            database = make_url(self.database_url)
+            if (
+                not database.host
+                or not database.host.endswith(".pooler.supabase.com")
+                or database.port != 6543
+            ):
+                raise ValueError(
+                    "Production requires the Supabase Shared Transaction Pooler on port 6543"
                 )
             if not self.bootstrap_admin_email or not self.bootstrap_admin_password:
                 raise ValueError(

@@ -119,20 +119,29 @@ def test_production_configuration_rejects_sqlite():
 
 
 def test_production_configuration_normalizes_standard_postgresql_url():
+    database_url = (
+        "postgresql://user:password@aws-0-region.pooler.supabase.com:6543/test"
+    )
     settings = Settings(
         app_env="production",
-        database_url="postgresql://user:password@db:5432/test",
+        database_url=database_url,
         secret_key="production-test-secret-that-is-not-real",
         frontend_url="https://frontend.example.com",
         bootstrap_admin_email="admin@example.com",
         bootstrap_admin_password="production-test-password",
     )
-    assert settings.database_url == "postgresql+psycopg://user:password@db:5432/test"
+    assert settings.database_url == database_url.replace(
+        "postgresql://",
+        "postgresql+psycopg://",
+        1,
+    )
     assert create_engine(settings.database_url).dialect.driver == "psycopg"
 
 
 def test_production_configuration_accepts_psycopg_url_without_changes():
-    database_url = "postgresql+psycopg://user:password@db:5432/test"
+    database_url = (
+        "postgresql+psycopg://user:password@aws-0-region.pooler.supabase.com:6543/test"
+    )
     settings = Settings(
         app_env="production",
         database_url=database_url,
@@ -144,6 +153,30 @@ def test_production_configuration_accepts_psycopg_url_without_changes():
 
     assert settings.database_url == database_url
     assert create_engine(settings.database_url).dialect.driver == "psycopg"
+
+
+@pytest.mark.parametrize(
+    "database_url",
+    [
+        "postgresql+psycopg://user:password@db.project-ref.supabase.co:5432/test",
+        "postgresql+psycopg://user:password@aws-0-region.pooler.supabase.com:5432/test",
+    ],
+)
+def test_production_configuration_rejects_non_transaction_supabase_endpoints(
+    database_url,
+):
+    with pytest.raises(
+        ValidationError,
+        match="Supabase Shared Transaction Pooler on port 6543",
+    ):
+        Settings(
+            app_env="production",
+            database_url=database_url,
+            secret_key="production-test-secret-that-is-not-real",
+            frontend_url="https://frontend.example.com",
+            bootstrap_admin_email="admin@example.com",
+            bootstrap_admin_password="production-test-password",
+        )
 
 
 def test_development_configuration_preserves_standard_postgresql_url():
@@ -159,11 +192,21 @@ def test_development_configuration_preserves_standard_postgresql_url():
 
 def test_serverless_engine_disables_pool_and_prepared_statements():
     options = _engine_options(
-        "postgresql+psycopg://user:password@pooler:6543/database",
+        "postgresql+psycopg://user:password@aws-0-region.pooler.supabase.com:6543/database",
         serverless=True,
     )
 
     assert options["poolclass"].__name__ == "NullPool"
+    assert options["connect_args"] == {"prepare_threshold": None}
+
+
+def test_transaction_pooler_disables_prepared_statements_without_serverless():
+    options = _engine_options(
+        "postgresql+psycopg://user:password@aws-0-region.pooler.supabase.com:6543/database",
+        serverless=False,
+    )
+
+    assert "poolclass" not in options
     assert options["connect_args"] == {"prepare_threshold": None}
 
 
@@ -200,7 +243,7 @@ def test_production_configuration_rejects_non_https_frontend():
     with pytest.raises(ValidationError, match="FRONTEND_URL must use HTTPS"):
         Settings(
             app_env="production",
-            database_url="postgresql+psycopg://user:password@db:5432/test",
+            database_url="postgresql+psycopg://user:password@aws-0-region.pooler.supabase.com:6543/test",
             secret_key="production-test-secret-that-is-not-real",
             frontend_url="http://localhost:5173",
             bootstrap_admin_email="admin@example.com",
@@ -212,7 +255,7 @@ def test_production_configuration_requires_bootstrap_admin():
     with pytest.raises(ValidationError, match="requires BOOTSTRAP_ADMIN_EMAIL"):
         Settings(
             app_env="production",
-            database_url="postgresql+psycopg://user:password@db:5432/test",
+            database_url="postgresql+psycopg://user:password@aws-0-region.pooler.supabase.com:6543/test",
             secret_key="production-test-secret-that-is-not-real",
             frontend_url="https://frontend.example.com",
             bootstrap_admin_email=None,

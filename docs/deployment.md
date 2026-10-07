@@ -13,10 +13,10 @@ Both projects connect to a Supabase PostgreSQL database. The API is serverless; 
 ## Supabase setup and connection modes
 Create the project in the Supabase dashboard, then use **Connect** to copy connection details. Choose the connection method based on runtime networking:
 
-- Vercel serverless requests: Shared Pooler, **Transaction** mode, if supported by project/network. Use the exact host, port, username, and database shown by Supabase. The backend's psycopg engine sets `prepare_threshold=None` for this mode.
+- Vercel serverless requests: Supabase Shared Pooler, **Transaction** mode, port `6543`. Use the exact host, port, username, and database shown by Supabase Connect; do not use the direct `db.<project-ref>.supabase.co` endpoint. The transaction pooler is designed for serverless short-lived connections. The backend's psycopg engine sets `prepare_threshold=None` and SQLAlchemy `NullPool` for Vercel.
 - Alembic migrations: use Direct connection when reachable, or Session Pooler where direct IPv6/network access is unavailable. Do not run migrations through the Transaction Pooler.
 
-The Vercel production `DATABASE_URL` must use SQLAlchemy's `postgresql+psycopg://` scheme. Preserve the provider-issued pooler host/port/username and SSL options; percent-encode reserved characters in passwords. Keep the URL only in protected provider/local environment configuration. Do not put it in a client environment variable or commit it.
+The Vercel production `DATABASE_URL` should be the Transaction Pooler connection string copied from Supabase Connect, using the provider-issued host, port `6543`, username, database, and SSL options. Either `postgresql://` or `postgresql+psycopg://` is accepted; the backend normalizes the standard form to `postgresql+psycopg://` in production and rejects non-pooler endpoints or ports. Percent-encode reserved characters in passwords. Keep the URL only in protected provider/local environment configuration. Do not put it in a client environment variable or commit it.
 
 Apply migrations separately, before deploying/activating the backend:
 
@@ -35,7 +35,7 @@ Use a Direct or Session Pooler connection string copied from Supabase for this s
 3. Select the Python framework/runtime if not auto-detected. `backend/index.py` exports the existing FastAPI object from `app.main`; no duplicate route implementation is introduced. `backend/requirements.txt` contains production dependencies; `backend/requirements-dev.txt` is for test tooling only.
 4. Set protected environment variables:
    - `APP_ENV=production`
-   - `DATABASE_URL` — Supabase transaction pooler URL with `postgresql+psycopg://` driver prefix
+   - `DATABASE_URL` — Supabase Shared Transaction Pooler URL (port `6543`), copied from Supabase Connect; either PostgreSQL URL scheme is accepted
    - `SECRET_KEY` — unique random value of at least 32 characters
    - `ALGORITHM=HS256`
    - `ACCESS_TOKEN_EXPIRE_MINUTES=1440`
