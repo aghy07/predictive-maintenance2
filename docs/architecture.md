@@ -74,6 +74,10 @@ Database deployment
   -> alembic upgrade head
   -> start FastAPI after the database schema is current
   -> readiness succeeds only when database and model are usable
+
+Production runtime:
+  Vercel static frontend -> Vercel Python Function (FastAPI ASGI)
+  -> Supabase PostgreSQL via psycopg pooler -> bundled Random Forest artifacts
 ```
 
 ## 4. ERD
@@ -121,6 +125,8 @@ One machine may have many predictions. Users are not currently linked to machine
 - SQLite is used for local development and fast iteration.
 - PostgreSQL uses the configured SQLAlchemy `DATABASE_URL` and psycopg 3; no dialect is hardcoded into database services.
 - Alembic owns production schema creation and evolution; the initial revision can adopt the prior unversioned schema without discarding rows.
+- Vercel serverless instances use SQLAlchemy `NullPool`; psycopg prepared statements are disabled for transaction-pooler requests. Migrations run as a separate deployment step.
+- ML artifacts are bundled under `backend/ml/` for Vercel's backend project root and are checked against the canonical training files in `ml/`.
 - Machines are archived rather than physically deleted so historical predictions retain their machine relation.
 - Development can seed a sample machine; production mode does not generate sample machine records.
 - The backend loads and validates the model bundle once per process and performs inference once per prediction request.

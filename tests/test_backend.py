@@ -31,7 +31,7 @@ command.upgrade(_ALEMBIC_CONFIG, "head")
 
 from app.main import app
 from app.core.config import Settings
-from app.core.db import SessionLocal, engine
+from app.core.db import SessionLocal, _engine_options, engine
 from app.core.security import hash_password
 from app.models.machine import Machine
 from app.models.prediction import Prediction
@@ -108,7 +108,7 @@ def test_cors_allows_only_configured_frontend():
 
 
 def test_production_configuration_rejects_sqlite():
-    with pytest.raises(ValidationError, match="Production requires PostgreSQL"):
+    with pytest.raises(ValidationError, match="Production requires a PostgreSQL"):
         Settings(
             app_env="production",
             database_url="sqlite:///./predictive.db",
@@ -116,6 +116,57 @@ def test_production_configuration_rejects_sqlite():
             bootstrap_admin_email="admin@example.com",
             bootstrap_admin_password="production-test-password",
         )
+
+
+def test_production_configuration_requires_psycopg_driver():
+    with pytest.raises(ValidationError, match="PostgreSQL psycopg URL"):
+        Settings(
+            app_env="production",
+            database_url="postgresql://user:password@db:5432/test",
+            secret_key="production-test-secret-that-is-not-real",
+            frontend_url="https://frontend.example.com",
+            bootstrap_admin_email="admin@example.com",
+            bootstrap_admin_password="production-test-password",
+        )
+
+
+def test_serverless_engine_disables_pool_and_prepared_statements():
+    options = _engine_options(
+        "postgresql+psycopg://user:password@pooler:6543/database",
+        serverless=True,
+    )
+
+    assert options["poolclass"].__name__ == "NullPool"
+    assert options["connect_args"] == {"prepare_threshold": None}
+
+
+def test_persistent_engine_retains_standard_pool_configuration():
+    options = _engine_options(
+        "postgresql+psycopg://user:password@db:5432/database",
+        serverless=False,
+    )
+
+    assert "poolclass" not in options
+    assert options["connect_args"] == {}
+    assert options["pool_pre_ping"] is True
+
+
+def test_vercel_entrypoint_exports_the_fastapi_application():
+    from index import app as vercel_app
+
+    assert vercel_app is app
+
+
+def test_vercel_model_artifacts_match_training_artifacts():
+    import hashlib
+
+    project_root = Path(__file__).resolve().parents[1]
+    source_dir = project_root / "ml"
+    vercel_dir = project_root / "backend" / "ml"
+    for name in ("model.joblib", "model_metadata.json"):
+        source_hash = hashlib.sha256((source_dir / name).read_bytes()).digest()
+        deployed_hash = hashlib.sha256((vercel_dir / name).read_bytes()).digest()
+        assert deployed_hash == source_hash
 
 
 def test_production_configuration_rejects_non_https_frontend():

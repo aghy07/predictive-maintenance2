@@ -1,14 +1,33 @@
+import os
+from typing import Any
+
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 
 settings = get_settings()
+
+
+def _engine_options(database_url: str, *, serverless: bool) -> dict[str, Any]:
+    is_sqlite = database_url.startswith("sqlite")
+    options = {
+        "connect_args": {"check_same_thread": False} if is_sqlite else {},
+        "pool_pre_ping": not is_sqlite,
+    }
+    if serverless:
+        options["poolclass"] = NullPool
+        if database_url.startswith("postgresql+psycopg://"):
+            options["connect_args"] = {"prepare_threshold": None}
+    return options
+
+
 is_sqlite = settings.database_url.startswith("sqlite")
+is_vercel = os.environ.get("VERCEL") == "1"
 engine = create_engine(
     settings.database_url,
-    connect_args={"check_same_thread": False} if is_sqlite else {},
-    pool_pre_ping=not is_sqlite,
+    **_engine_options(settings.database_url, serverless=is_vercel),
 )
 if is_sqlite:
     @event.listens_for(engine, "connect")

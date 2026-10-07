@@ -30,6 +30,6 @@ These manual scenarios validate externally observable behavior through the UI/AP
 | Out-of-training-range but valid value | A finite value above the recorded training range | Accepted with extrapolation warning; not treated as a physical limit |
 
 ## Deployment smoke check
-Apply `alembic upgrade head`, configure the database and a unique bootstrap administrator, start the API and frontend, then exercise login, machine listing, one prediction, and prediction history. The Docker backend entrypoint runs the migration before Uvicorn.
+Apply Alembic to the Supabase database using a Direct or Session Pooler migration URL, deploy the Vercel backend, and verify `/ready` before deploying or testing the frontend. Then exercise login, machine listing, one prediction, and prediction history through the production browser flow.
 
 Actual production scenario results must be recorded from a live deployment; no such deployment has been verified in the current environment. Passing these scenarios does not establish production readiness. The model and dataset are synthetic; live PostgreSQL integration, real-equipment validation, load testing, and operational safety acceptance remain outstanding.

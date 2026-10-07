@@ -1,117 +1,86 @@
-# Deployment guide
+# Deployment guide — Vercel and Supabase
 
-## Local deployment
-Use the project directly with Python and Vite:
+## Target layout
+Use the same GitHub repository for two separate Vercel projects:
 
-```bash
+| Project | Root Directory | Runtime | Build/output |
+|---|---|---|---|
+| Frontend | `frontend` | Vercel static Vite | `npm run build` → `dist` |
+| Backend | `backend` | Vercel Python Function / FastAPI ASGI | `index.py` exports `app` |
+
+Both projects connect to a Supabase PostgreSQL database. The API is serverless; it uses SQLAlchemy `NullPool` and disables psycopg prepared statements for Vercel's transaction pooler. PostgreSQL migrations are a separate deployment step.
+
+## Supabase setup and connection modes
+Create the project in the Supabase dashboard, then use **Connect** to copy connection details. Choose the connection method based on runtime networking:
+
+- Vercel serverless requests: Shared Pooler, **Transaction** mode, if supported by project/network. Use the exact host, port, username, and database shown by Supabase. The backend's psycopg engine sets `prepare_threshold=None` for this mode.
+- Alembic migrations: use Direct connection when reachable, or Session Pooler where direct IPv6/network access is unavailable. Do not run migrations through the Transaction Pooler.
+
+The Vercel production `DATABASE_URL` must use SQLAlchemy's `postgresql+psycopg://` scheme. Preserve the provider-issued pooler host/port/username and SSL options; percent-encode reserved characters in passwords. Keep the URL only in protected provider/local environment configuration. Do not put it in a client environment variable or commit it.
+
+Apply migrations separately, before deploying/activating the backend:
+
+```powershell
 cd backend
-python -m pip install -r requirements.txt
-# Copy .env.example to .env; replace the secret and bootstrap admin placeholders.
+$env:DATABASE_URL = Read-Host "Paste the Supabase migration URL (input is local only)"
 alembic upgrade head
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+Remove-Item Env:DATABASE_URL
 ```
 
-```bash
-cd frontend
-npm install
-npm run dev -- --host 0.0.0.0
-```
+Use a Direct or Session Pooler connection string copied from Supabase for this step. Confirm in Supabase Table Editor that `users`, `machines`, `predictions`, and `alembic_version` exist. Never point destructive or downgrade tests at production.
 
-## Docker deployment
-The Docker Compose stack builds the backend and frontend production images and starts PostgreSQL with a persistent named volume:
+## Vercel backend project
+1. Import the GitHub repository into Vercel as a project named for the API.
+2. Set **Root Directory** to `backend` (include files outside the root only if Vercel explicitly supports them; the model is bundled inside `backend/ml/`).
+3. Select the Python framework/runtime if not auto-detected. `backend/index.py` exports the existing FastAPI object from `app.main`; no duplicate route implementation is introduced. `backend/requirements.txt` contains production dependencies; `backend/requirements-dev.txt` is for test tooling only.
+4. Set protected environment variables:
+   - `APP_ENV=production`
+   - `DATABASE_URL` — Supabase transaction pooler URL with `postgresql+psycopg://` driver prefix
+   - `SECRET_KEY` — unique random value of at least 32 characters
+   - `ALGORITHM=HS256`
+   - `ACCESS_TOKEN_EXPIRE_MINUTES=1440`
+   - `MODEL_PATH=ml/model.joblib`
+   - `METADATA_PATH=ml/model_metadata.json`
+   - `FRONTEND_URL` — exact Vercel frontend HTTPS origin
+   - `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD`, `BOOTSTRAP_ADMIN_NAME`
+5. Deploy. No migration runs on API startup or request. Verify `/health` and `/ready` after migration and configuration.
+6. Create a unique admin password in the provider dashboard. The legacy `admin@predictive.com` user is disabled unless explicitly configured as bootstrap admin.
 
-```bash
-# Copy .env.example to .env and replace every replace-with-* placeholder.
-docker compose up --build
-```
+The model and metadata files are each a few MB together and are bundled inside the backend project root. Training artifacts remain canonical in `ml/`; a backend test checks that their byte hashes match the copies in `backend/ml/`. After retraining, synchronize both backend copies and run the artifact integrity test before deploying. Vercel's current Python runtime documentation lists a 500 MB uncompressed standard function bundle limit; actual deployment build remains the final confirmation because dependencies contribute to bundle size.
 
-Compose waits for PostgreSQL health, starts the API (whose image entrypoint applies `alembic upgrade head` before Uvicorn), then waits for `/ready` before starting the Nginx frontend. There are no source bind mounts or SQLite database in this stack.
+## Vercel frontend project
+1. Import the same GitHub repository as a second Vercel project.
+2. Set **Root Directory** to `frontend`, framework preset to Vite, build command to `npm run build`, and output directory to `dist`. `frontend/vercel.json` sets the Vite build/output and SPA route fallback.
+3. Set only `VITE_API_URL` in the frontend project, to the actual backend HTTPS base URL. Do not set `DATABASE_URL`, JWT secret, bootstrap password, or any database credential in frontend environment.
+4. Deploy/redeploy after setting the environment variable. Vite compiles this URL into static assets at build time.
+5. Set the backend `FRONTEND_URL` to the actual deployed frontend origin and redeploy the backend. CORS accepts only that configured origin.
 
-For local testing, retain `APP_ENV=development` and the localhost frontend/API URLs. For production, set `APP_ENV=production`, `FRONTEND_URL` to the exact HTTPS frontend origin, and `VITE_API_URL` to the HTTPS backend API base before building the frontend. `VITE_API_URL` is baked into the static bundle; setting it only as a runtime container variable will not change the built assets.
+## Production verification checklist
+Record only actual observations; use the deployment dashboard/browser and do not infer pass results from a local build.
 
-## Native cloud deployment (Render, Supabase, Vercel)
-The repository includes [render.yaml](../render.yaml) and [frontend/vercel.json](../frontend/vercel.json) for native Python and static Vite hosting. No Docker service is required for this route.
+| Check | Expected | Actual |
+|---|---|---|
+| Backend `/health` | HTTP 200 liveness | Not tested — no deployed URL |
+| Backend `/ready` | HTTP 200 with DB/model available | Not tested — no Supabase connection |
+| No-token protected endpoints | HTTP 401/403 | Not tested against production |
+| Invalid token | HTTP 401 | Not tested against production |
+| Operator machine mutation | HTTP 403 | Not tested against production |
+| Admin machine mutation | Success | Not tested against production |
+| Login/dashboard/machine selection | Browser flow works against API | Not tested — no deployed URL |
+| Prediction/history/refresh | Record persists in Supabase | Not tested — no Supabase connection |
+| Logout/protected route | Token cleared and login required | Not tested against production |
+| CORS and network | Browser requests HTTPS backend; only exact frontend origin allowed | Not tested against production |
+| Mobile and browser console | Core pages usable; no important errors | Not tested — no deployed URL |
+| Backend redeploy | Model and DB history remain available | Not tested against production |
 
-1. Push the project to a GitHub repository. Do not commit `.env` files or database files.
-2. Create a Supabase PostgreSQL project. In its dashboard, copy the connection string appropriate to the Render service's network. Configure `DATABASE_URL` on Render as a SQLAlchemy psycopg URL (`postgresql+psycopg://...`); percent-encode special characters in the username/password. Do not paste connection strings into chat or source.
-3. In Render, create a Blueprint from the GitHub repository and review the service settings from `render.yaml`. The build command installs `backend/requirements.txt`; the start command changes into `backend`, applies Alembic, and starts `app.main:app` on the Render-provided `$PORT`. The root `.python-version` pins the tested Python runtime. The model paths resolve from that backend working directory to the sibling `ml` artifacts. The repository root is used so changes to the model artifacts also trigger automatic redeployment.
-4. Set Render environment variables `DATABASE_URL`, `FRONTEND_URL`, `BOOTSTRAP_ADMIN_EMAIL`, and `BOOTSTRAP_ADMIN_PASSWORD` in the provider dashboard. `SECRET_KEY` is generated by Render blueprint configuration. Never put actual secrets in YAML or source. Register/verify the initial migration is safe for the selected new application database before allowing it to run.
-5. Wait for Render `/ready` to pass. It requires both database connectivity and valid model artifacts. Verify `/health`, `/ready`, `/auth/login`, and protected routes against the actual service URL before proceeding.
-6. In Vercel, import the same GitHub repository and set the project root to `frontend`. `frontend/vercel.json` configures Vite install/build/output and SPA fallback.
-7. Set Vercel `VITE_API_URL` to the actual Render HTTPS URL (no guessed or placeholder URL), and deploy. Then update Render `FRONTEND_URL` to the exact Vercel HTTPS origin and redeploy Render so CORS is restricted to the real site.
-8. Exercise the whole login → dashboard → machines → prediction → history → refresh → logout flow from a browser, then verify behavior after a backend redeploy. Record only actual observed outcomes and public URLs.
+## Optional local Docker deployment
+`docker-compose.yml` and Dockerfiles remain as an optional local/container alternative only. They are not required by the Vercel deployment target. Docker was not available during this verification and its build/runtime is not claimed as tested.
 
-Render auto-deploys from the connected branch when enabled; the blueprint declares `autoDeploy: true`. Vercel Git deployments also build on connected-branch updates. Verify branch and deployment protection settings in both provider dashboards.
+## Current status
+Repository: [aghy07/predictive-maintenance2](https://github.com/aghy07/predictive-maintenance2). The public repository currently has only the initial commit at the inspected `main` revision, so local changes in this workspace (including Vercel configuration) must be pushed before Vercel can build them. This workspace has no available `git` CLI or connected Vercel/Supabase account. No Supabase project/database, Vercel deployment, or public URL has been verified. Do not mark this project production-ready until the checklist above is completed on the actual public deployments.
 
-These steps require the user to authorize repository and provider accounts and create/select the Supabase project. This workspace cannot create cloud resources, connect private accounts, or discover actual generated URLs, so live deployment must not be claimed until verified.
-
-## Production recommendations
-Use managed PostgreSQL with persistent backups, deploy FastAPI natively on Render and the static Vite frontend on Vercel, and configure secrets through provider environment-variable settings. Do not expose the local Compose PostgreSQL instance as a public production database.
-
-Suggested cloud pattern:
-- Frontend: Vercel
-- Backend: Render
-- Database: Supabase PostgreSQL
-
-## Environment variables
-Backend example:
-```env
-DATABASE_URL=postgresql://user:password@host:5432/predictive
-SECRET_KEY=<random-secret-at-least-32-characters>
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=1440
-APP_ENV=production
-MODEL_PATH=/app/ml/model.joblib
-METADATA_PATH=/app/ml/model_metadata.json
-FRONTEND_URL=https://your-frontend-url
-BOOTSTRAP_ADMIN_EMAIL=admin@your-domain.example
-BOOTSTRAP_ADMIN_PASSWORD=<unique-password-at-least-12-characters>
-BOOTSTRAP_ADMIN_NAME=Administrator
-```
-
-Frontend example:
-```env
-VITE_API_URL=https://your-backend-url
-```
-
-The backend does not create a built-in demo account. Set both bootstrap admin
-variables in the deployment environment to create or refresh the administrator
-account at startup. Keep these values out of source control and use a unique
-password for each deployment.
-The previously seeded `admin@predictive.com` account is disabled at startup
-unless it is configured as the bootstrap administrator, in which case the
-configured password replaces the former demo password.
-
-Authenticated API permissions:
-- Any active authenticated user can list machines and read/create predictions.
-- Only users with the `admin` role can create, edit, or archive machines.
-- Missing, invalid, expired, or inactive-user tokens receive HTTP 401; an
-  authenticated user without the required role receives HTTP 403.
-
-## Production checklist
-- Use PostgreSQL with `DATABASE_URL=postgresql+psycopg://...`
-- Set `APP_ENV=production`; the backend rejects SQLite and requires bootstrap-admin credentials and an HTTPS frontend origin
-- Set `VITE_API_URL` to the HTTPS backend API base at frontend build time; production builds fail if it is missing or non-HTTPS
-- Apply `alembic upgrade head` before serving traffic; the backend container entrypoint applies migrations before Uvicorn
-- Back up an existing legacy SQLite database before first migration
-- Verify `/health` for liveness and `/ready` for database and model readiness
-- Set secure JWT secret values
-- Restrict CORS origins
-- Use environment-based configuration
-- Ensure frontend and backend URLs are production-correct
-- Run migration scripts before serving traffic
-
-## Current deployment verification status
-Git CLI is unavailable and this workspace is not linked to a GitHub remote. Provider-account access and deployment controls are not available in this workspace. No cloud resources have been created, no live PostgreSQL migration was run, and no public production URLs are verified. Browser E2E, production mobile rendering, live CORS/auth, and persistence across a backend redeploy therefore remain unverified. Do not report production readiness until those checks pass against the actual deployment.
-
-## Phase 4 pre-deployment audit
-Corrections made during the audit:
-- Replaced the frontend development-server container with a multi-stage Node build and Nginx static server with SPA routing.
-- Replaced the Compose SQLite default and source bind mounts with a PostgreSQL service and persistent named volume.
-- Added database/backend readiness ordering and `/ready`, which probes the database and verifies model artifacts.
-- Restricted production configuration to PostgreSQL, configured bootstrap-admin credentials, and an HTTPS frontend origin; development mode remains available for local use.
-- Required an explicit frontend API URL at build time and rejected missing/non-HTTPS URLs for production builds; localhost is only the development fallback.
-- Stopped creating the example machine when `APP_ENV=production`.
-- Added Render native deployment blueprint and Vercel Vite static hosting/rewrite config; the current backend start command is derived from `app.main:app` and runs Alembic before Uvicorn.
-
-Verified in this environment: 68 Python tests pass, Compose YAML parses, and the frontend TypeScript/production build passes with an HTTPS API URL. These checks do not substitute for the outstanding Docker, real PostgreSQL, cloud, live API/CORS/auth, browser/mobile, and persistence acceptance tests listed above.
+### Phase 4 Vercel preparation
+- Added a FastAPI Vercel entrypoint, bundled ML artifacts, serverless-specific `NullPool` configuration, and separate psycopg settings for transaction pooling.
+- Migrations remain an explicit external step; no schema migration runs per invocation.
+- Production requirements are separated from test-only dependencies.
+- Live deployment, live PostgreSQL, CORS/auth, E2E, persistence, and mobile checks are pending.

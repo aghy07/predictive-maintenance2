@@ -9,7 +9,7 @@ python -m pytest -q
 
 PostgreSQL DDL is compiled in tests, but no live PostgreSQL service is available in the current verification environment. Do not interpret this as completed PostgreSQL integration validation.
 
-After the Phase 4 configuration/readiness changes, the full Python suite reports **68 passed** (one existing dependency deprecation warning). The frontend TypeScript/Vite production build passed with an explicit HTTPS test API base URL; Vite reported a **640.63 kB** minified JavaScript chunk, above its 500 kB advisory threshold. This is non-fatal. The Docker frontend image uses a multi-stage production build and Nginx static serving, but the image itself has not been built because Docker is unavailable.
+The full Python test suite passes: **73 passed** (with existing dependency deprecation warnings). The focused tests cover the Vercel entrypoint, serverless engine options, production DB URL validation, and matching model-artifact hashes. The frontend TypeScript/Vite production build passes with an explicit HTTPS test API base URL; Vite reports a **640.63 kB** minified JavaScript chunk, above its 500 kB advisory threshold. This is non-fatal. The Docker frontend image uses a multi-stage production build and Nginx static serving, but the image itself has not been built because Docker is unavailable.
 
 ## Black-box testing
 See [black-box-testing.md](./black-box-testing.md) for manual end-to-end scenarios. The end-user workflow is login, dashboard access, machine review, sensor submission, prediction/risk/recommendation inspection, and history review. These are manual product scenarios, not proof that a browser-driven end-to-end automation suite exists.
@@ -23,6 +23,6 @@ $env:APP_ENV = "production"
 npm run build
 ```
 
-Docker and a real PostgreSQL server/client were not available in the current environment. PostgreSQL migration and CRUD against a live server, Docker image execution, cloud deployment, E2E browser testing, mobile-device testing, and deployment-level persistence are therefore still outstanding.
+No Supabase project or Vercel deployment is connected in the current environment. Live PostgreSQL migration/CRUD, Vercel Function packaging/runtime, cloud deployment, E2E browser testing, mobile-device testing, and deployment-level persistence are still outstanding. Docker is optional for the selected Vercel deployment path.
 
 The checked-in model and dataset are synthetic classroom assets; passing these tests and the build does not establish real-world predictive accuracy or operational safety. No live deployment, load, or real-equipment acceptance test has been performed.

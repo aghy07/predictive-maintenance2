@@ -35,8 +35,10 @@ class Settings(BaseSettings):
         if self.bootstrap_admin_password and self.bootstrap_admin_password.get_secret_value().lower().startswith("replace-with-"):
             raise ValueError("BOOTSTRAP_ADMIN_PASSWORD must be replaced with a unique value")
         if self.app_env.lower() == "production":
-            if not self.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
-                raise ValueError("Production requires PostgreSQL; SQLite is not supported")
+            if not self.database_url.startswith("postgresql+psycopg://"):
+                raise ValueError(
+                    "Production requires a PostgreSQL psycopg URL; SQLite is not supported"
+                )
             if not self.bootstrap_admin_email or not self.bootstrap_admin_password:
                 raise ValueError(
                     "Production requires BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD"
