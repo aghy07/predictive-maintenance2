@@ -18,16 +18,51 @@ Create the project in the Supabase dashboard, then use **Connect** to copy conne
 
 The Vercel production `DATABASE_URL` should be the Transaction Pooler connection string copied from Supabase Connect, using the provider-issued host, port `6543`, username, database, and SSL options. Either `postgresql://` or `postgresql+psycopg://` is accepted; the backend normalizes the standard form to `postgresql+psycopg://` in production and rejects non-pooler endpoints or ports. Percent-encode reserved characters in passwords. Keep the URL only in protected provider/local environment configuration. Do not put it in a client environment variable or commit it.
 
-Apply migrations separately, before deploying/activating the backend:
+Apply migrations separately, before deploying/activating the backend. For this one-time CLI run, use the Supabase **Session Pooler** URL (port `5432`) or Direct connection if the network supports it. Use the driver prefix `postgresql+psycopg://`; do not use the Transaction Pooler on port `6543` for migrations.
 
 ```powershell
-cd backend
-$env:DATABASE_URL = Read-Host "Paste the Supabase migration URL (input is local only)"
-alembic upgrade head
-Remove-Item Env:DATABASE_URL
+Set-Location "E:\Python\Project RPL\predictive-maintenance\backend"
+$secureUrl = Read-Host "Paste the Supabase Session Pooler/Direct migration URL (input is masked)" -AsSecureString
+$urlPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureUrl)
+try {
+    # Alembic imports app settings; development mode avoids the API-only port 6543 restriction.
+    $env:APP_ENV = "development"
+    $env:SECRET_KEY = [guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N")
+    $migrationUrl = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($urlPointer)
+    if ($migrationUrl.StartsWith("postgresql://", [StringComparison]::OrdinalIgnoreCase)) {
+        $migrationUrl = "postgresql+psycopg://" + $migrationUrl.Substring("postgresql://".Length)
+    }
+    $env:DATABASE_URL = $migrationUrl
+    python -m alembic upgrade head
+    if ($LASTEXITCODE -ne 0) {
+        throw "Alembic migration failed with exit code $LASTEXITCODE"
+    }
+}
+finally {
+    Remove-Item Env:DATABASE_URL, Env:APP_ENV, Env:SECRET_KEY -ErrorAction SilentlyContinue
+    $migrationUrl = $null
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($urlPointer)
+    $secureUrl.Dispose()
+}
 ```
 
-Use a Direct or Session Pooler connection string copied from Supabase for this step. Confirm in Supabase Table Editor that `users`, `machines`, `predictions`, and `alembic_version` exist. Never point destructive or downgrade tests at production.
+The temporary `APP_ENV` and generated `SECRET_KEY` above exist only in that PowerShell process so Alembic can import the application metadata; they do not change Vercel's production settings or any application credentials. The migration URL is typed into a masked prompt and removed from the process environment after the command.
+
+The chain currently contains the single head revision `0001_initial_schema` (root revision). On an empty database, it creates `users`, `machines`, and `predictions`, with their indexes and foreign key, and records the revision in `alembic_version`. The revision checks existing tables first; a partial legacy schema is rejected before changes. If all three legacy application tables already exist, it performs compatibility updates and alters/recreates tables while preserving rows, so inspect an existing non-empty database before applying. Do not downgrade production.
+
+After `upgrade head` succeeds, run this read-only verification in the Supabase SQL Editor:
+
+```sql
+SELECT version_num FROM alembic_version;
+
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+  AND table_name IN ('users', 'machines', 'predictions', 'alembic_version')
+ORDER BY table_name;
+```
+
+Expected revision: `0001_initial_schema`; expected tables: all four listed above. Never point destructive or downgrade tests at production.
 
 ## Vercel backend project
 1. Import the GitHub repository into Vercel as a project named for the API.
