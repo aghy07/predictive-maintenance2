@@ -118,16 +118,43 @@ def test_production_configuration_rejects_sqlite():
         )
 
 
-def test_production_configuration_requires_psycopg_driver():
-    with pytest.raises(ValidationError, match="PostgreSQL psycopg URL"):
-        Settings(
-            app_env="production",
-            database_url="postgresql://user:password@db:5432/test",
-            secret_key="production-test-secret-that-is-not-real",
-            frontend_url="https://frontend.example.com",
-            bootstrap_admin_email="admin@example.com",
-            bootstrap_admin_password="production-test-password",
-        )
+def test_production_configuration_normalizes_standard_postgresql_url():
+    settings = Settings(
+        app_env="production",
+        database_url="postgresql://user:password@db:5432/test",
+        secret_key="production-test-secret-that-is-not-real",
+        frontend_url="https://frontend.example.com",
+        bootstrap_admin_email="admin@example.com",
+        bootstrap_admin_password="production-test-password",
+    )
+    assert settings.database_url == "postgresql+psycopg://user:password@db:5432/test"
+    assert create_engine(settings.database_url).dialect.driver == "psycopg"
+
+
+def test_production_configuration_accepts_psycopg_url_without_changes():
+    database_url = "postgresql+psycopg://user:password@db:5432/test"
+    settings = Settings(
+        app_env="production",
+        database_url=database_url,
+        secret_key="production-test-secret-that-is-not-real",
+        frontend_url="https://frontend.example.com",
+        bootstrap_admin_email="admin@example.com",
+        bootstrap_admin_password="production-test-password",
+    )
+
+    assert settings.database_url == database_url
+    assert create_engine(settings.database_url).dialect.driver == "psycopg"
+
+
+def test_development_configuration_preserves_standard_postgresql_url():
+    database_url = "postgresql://user:password@db:5432/test"
+    settings = Settings(
+        app_env="development",
+        database_url=database_url,
+        secret_key="development-test-secret-that-is-not-real",
+    )
+
+    assert settings.database_url == database_url
 
 
 def test_serverless_engine_disables_pool_and_prepared_statements():
