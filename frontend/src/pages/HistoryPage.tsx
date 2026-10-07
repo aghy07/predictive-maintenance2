@@ -35,12 +35,12 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0">
           <p className="text-sm uppercase tracking-[0.2em] text-emerald-400">Records</p>
-          <h1 className="mt-2 text-3xl font-bold text-white">Prediction history</h1>
+          <h1 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Prediction history</h1>
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
+        <div className="flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-300">
           <Clock3 className="h-4 w-4 text-cyan-300" />
           {items.length} entries
         </div>
@@ -62,8 +62,13 @@ export default function HistoryPage() {
             Belum ada riwayat prediksi.
           </div>
         ) : !error ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-white/10 text-left text-sm text-slate-200">
+          <div
+            className="max-w-full overflow-x-auto"
+            role="region"
+            aria-label="Prediction history table"
+            tabIndex={0}
+          >
+            <table className="min-w-[640px] divide-y divide-white/10 text-left text-sm text-slate-200">
               <thead className="bg-slate-900/80">
                 <tr>
                   <th className="px-4 py-3 font-medium text-slate-300">Machine</th>

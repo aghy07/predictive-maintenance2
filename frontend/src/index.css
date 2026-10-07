@@ -66,6 +66,7 @@ select {
 
 .app-shell {
   background: rgba(2, 6, 23, 0.7);
+  overflow-x: clip;
 }
 
 .status-badge {
