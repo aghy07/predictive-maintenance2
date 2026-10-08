@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { Activity, Gauge, History, LogOut, Menu, ServerCog, Sparkles, Wrench, X } from "lucide-react";
 
 const navItems = [
   { to: "/dashboard", label: "Dashboard", icon: Gauge },
-  { to: "/predict", label: "Predictions", icon: Activity },
+  { to: "/predict", label: "Prediction", icon: Activity },
   { to: "/history", label: "History", icon: History },
   { to: "/machines", label: "Machines", icon: ServerCog },
 ];
@@ -26,6 +26,10 @@ const navLinkClass = (isActive: boolean) =>
 export default function Layout() {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const location = useLocation();
+  const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileDrawerRef = useRef<HTMLElement>(null);
+  const wasMobileNavOpen = useRef(false);
 
   let user: { name?: string; role?: string } = {};
   try {
@@ -40,16 +44,45 @@ export default function Layout() {
     if (!isMobileNavOpen) return;
 
     const previousOverflow = document.body.style.overflow;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsMobileNavOpen(false);
+    const handleDialogKeys = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMobileNavOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = mobileDrawerRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable?.length) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
     document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", closeOnEscape);
+    mobileCloseButtonRef.current?.focus();
+    window.addEventListener("keydown", handleDialogKeys);
     return () => {
       document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("keydown", handleDialogKeys);
     };
+  }, [isMobileNavOpen]);
+
+  useEffect(() => {
+    if (isMobileNavOpen) {
+      wasMobileNavOpen.current = true;
+    } else if (wasMobileNavOpen.current) {
+      wasMobileNavOpen.current = false;
+      mobileMenuButtonRef.current?.focus();
+    }
   }, [isMobileNavOpen]);
 
   useEffect(() => {
@@ -112,10 +145,11 @@ export default function Layout() {
             />
             <aside
               id="mobile-navigation"
+              ref={mobileDrawerRef}
               role="dialog"
               aria-modal="true"
               aria-label="Mobile navigation"
-              className="fixed inset-y-0 left-0 z-50 flex w-[min(20rem,calc(100vw-2rem))] flex-col overflow-y-auto border-r border-white/10 bg-slate-950 p-5 shadow-2xl md:hidden"
+              className="mobile-drawer-enter fixed inset-y-0 left-0 z-50 flex w-[min(20rem,calc(100vw-2rem))] flex-col overflow-y-auto border-r border-white/10 bg-slate-950 p-5 shadow-2xl md:hidden"
             >
               <div className="mb-8 flex items-center justify-between gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-500/5 px-3 py-3">
                 <div className="flex min-w-0 items-center gap-3">
@@ -128,6 +162,7 @@ export default function Layout() {
                   </div>
                 </div>
                 <button
+                  ref={mobileCloseButtonRef}
                   type="button"
                   onClick={() => setIsMobileNavOpen(false)}
                   aria-label="Close menu"
@@ -167,6 +202,7 @@ export default function Layout() {
             <div className="flex items-center justify-between gap-2 md:gap-4">
               <div className="flex min-w-0 items-center gap-2 md:gap-3">
                 <button
+                  ref={mobileMenuButtonRef}
                   type="button"
                   aria-label="Open navigation menu"
                   aria-expanded={isMobileNavOpen}

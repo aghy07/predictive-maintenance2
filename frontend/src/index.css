@@ -48,6 +48,18 @@ select {
   font: inherit;
 }
 
+button,
+a,
+input,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--emerald);
+  outline-offset: 3px;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
 }
@@ -67,6 +79,40 @@ select {
 .app-shell {
   background: rgba(2, 6, 23, 0.7);
   overflow-x: clip;
+}
+
+@layer components {
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.2em] text-emerald-300;
+  }
+
+  .page-title {
+    @apply mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl lg:text-4xl;
+  }
+
+  .section-title {
+    @apply text-lg font-semibold tracking-tight text-white;
+  }
+
+  .button-primary {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-400 px-4 py-2.5 text-sm font-semibold text-slate-950 shadow-sm shadow-emerald-950/30 transition hover:bg-emerald-300 active:scale-[0.98] disabled:cursor-wait disabled:opacity-60;
+  }
+
+  .button-secondary {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:border-white/20 hover:bg-white/[0.08] active:scale-[0.98] disabled:cursor-wait disabled:opacity-60;
+  }
+
+  .field-control {
+    @apply min-h-11 w-full min-w-0 rounded-xl border border-slate-700 bg-slate-950/70 px-3.5 py-2.5 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-400/70 focus:ring-2 focus:ring-emerald-500/20;
+  }
+
+  .quick-action {
+    @apply flex min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/50 p-4 transition hover:-translate-y-0.5 hover:border-white/20 hover:bg-slate-900/80;
+  }
+
+  .icon-link {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-300 transition hover:border-emerald-400/30 hover:text-emerald-300;
+  }
 }
 
 .status-badge {
@@ -103,6 +149,32 @@ select {
 
 .metric-glow {
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 16px 35px rgba(52, 211, 153, 0.12);
+}
+
+.mobile-drawer-enter {
+  animation: drawer-enter 180ms ease-out both;
+}
+
+@keyframes drawer-enter {
+  from {
+    opacity: 0;
+    transform: translateX(-0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 input[type="number"]::-webkit-outer-spin-button,
