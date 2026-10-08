@@ -1,38 +1,56 @@
 # Deployment guide — Vercel and Supabase
 
-## Target layout
-Use the same GitHub repository for two separate Vercel projects:
+This guide describes the repository's deployment layout, server/database requirements, migration procedure, and verification evidence. Do not put credentials in this file, source control, or frontend build variables.
 
-| Project | Root Directory | Runtime | Build/output |
+## Production URLs
+
+The following URLs were supplied for this project:
+
+- Frontend: <https://predictive-maintenance2-sy6k.vercel.app>
+- Backend: <https://predictive-maintenance2-pgwe.vercel.app>
+- Swagger / OpenAPI UI: <https://predictive-maintenance2-pgwe.vercel.app/docs>
+
+These are project deployment links. Their presence is not evidence that every health, readiness, authorization, database, or end-to-end check below has passed. Record only observed live results in the verification table.
+
+## Deployment layout
+
+Use two Vercel projects from the same repository:
+
+| Project | Root directory | Runtime / framework | Build / output |
 |---|---|---|---|
-| Frontend | `frontend` | Vercel static Vite | `npm run build` → `dist` |
-| Backend | `backend` | Vercel Python Function / FastAPI ASGI | `index.py` exports `app` |
+| Frontend | `frontend` | Static Vite SPA | `npm run build` → `dist` |
+| Backend | `backend` | Python Function running FastAPI ASGI | `index.py` exports `app` |
 
-Both projects connect to a Supabase PostgreSQL database. The API is serverless; it uses SQLAlchemy `NullPool` and disables psycopg prepared statements for Vercel's transaction pooler. PostgreSQL migrations are a separate deployment step.
+The frontend sends HTTPS requests to the backend. The API persists application records in Supabase PostgreSQL and loads its Random Forest model bundle from `backend/ml/`. The production API uses SQLAlchemy `NullPool`; psycopg prepared statements are disabled for transaction-pooler requests.
 
-## Supabase setup and connection modes
-Create the project in the Supabase dashboard, then use **Connect** to copy connection details. Choose the connection method based on runtime networking:
+## Supabase database connection
 
-- Vercel serverless requests: Supabase Shared Pooler, **Transaction** mode, port `6543`. Use the exact host, port, username, and database shown by Supabase Connect; do not use the direct `db.<project-ref>.supabase.co` endpoint. The transaction pooler is designed for serverless short-lived connections. The backend's psycopg engine sets `prepare_threshold=None` and SQLAlchemy `NullPool` for Vercel.
-- Alembic migrations: use Direct connection when reachable, or Session Pooler where direct IPv6/network access is unavailable. Do not run migrations through the Transaction Pooler.
+Configure production backend `DATABASE_URL` using the Supabase Shared Pooler **Transaction** connection details shown in Supabase Connect:
 
-The Vercel production `DATABASE_URL` should be the Transaction Pooler connection string copied from Supabase Connect, using the provider-issued host, port `6543`, username, database, and SSL options. Either `postgresql://` or `postgresql+psycopg://` is accepted; the backend normalizes the standard form to `postgresql+psycopg://` in production and rejects non-pooler endpoints or ports. Percent-encode reserved characters in passwords. Keep the URL only in protected provider/local environment configuration. Do not put it in a client environment variable or commit it.
+- Port `6543`.
+- Supabase pooler hostname and username copied from the project connection details.
+- PostgreSQL scheme `postgresql://` or `postgresql+psycopg://`; production settings normalize the standard scheme to psycopg.
+- Keep the entire URL in protected backend environment configuration. Do not commit it or set it in frontend variables.
 
-Apply migrations separately, before deploying/activating the backend. For this one-time CLI run, use the Supabase **Session Pooler** URL (port `5432`) or Direct connection if the network supports it. Use the driver prefix `postgresql+psycopg://`; do not use the Transaction Pooler on port `6543` for migrations.
+Production validation rejects SQLite and requires the Supabase pooler hostname on port `6543`; a direct `db.<project-ref>.supabase.co` URL or a different pooler port is not accepted by runtime settings.
+
+Alembic migrations must use a separate Direct connection where available or a Supabase Session Pooler connection (commonly port `5432`). **Do not run migrations through the Transaction Pooler on port `6543`.** Confirm the connection mode and exact host/port in Supabase Connect; do not guess them from examples.
+
+## Apply and verify the database migration
+
+The current migration chain has a single head revision: `0001_initial_schema`. On an empty database it creates `users`, `machines`, `predictions`, their indexes and foreign key, and `alembic_version`. It does not seed production machines. Application startup does not create tables.
+
+From PowerShell, set a migration URL only in the local process. Do not paste it into source control or chat. Run this from the backend directory after dependencies are installed:
 
 ```powershell
 Set-Location "E:\Python\Project RPL\predictive-maintenance\backend"
-$secureUrl = Read-Host "Paste the Supabase Session Pooler/Direct migration URL (input is masked)" -AsSecureString
-$urlPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureUrl)
+$env:APP_ENV = "development"
+$env:SECRET_KEY = [guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N")
+$env:DATABASE_URL = Read-Host "Enter the Supabase Direct or Session Pooler migration URL"
+if ($env:DATABASE_URL.StartsWith("postgresql://", [StringComparison]::OrdinalIgnoreCase)) {
+    $env:DATABASE_URL = "postgresql+psycopg://" + $env:DATABASE_URL.Substring("postgresql://".Length)
+}
 try {
-    # Alembic imports app settings; development mode avoids the API-only port 6543 restriction.
-    $env:APP_ENV = "development"
-    $env:SECRET_KEY = [guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N")
-    $migrationUrl = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($urlPointer)
-    if ($migrationUrl.StartsWith("postgresql://", [StringComparison]::OrdinalIgnoreCase)) {
-        $migrationUrl = "postgresql+psycopg://" + $migrationUrl.Substring("postgresql://".Length)
-    }
-    $env:DATABASE_URL = $migrationUrl
     python -m alembic upgrade head
     if ($LASTEXITCODE -ne 0) {
         throw "Alembic migration failed with exit code $LASTEXITCODE"
@@ -40,17 +58,14 @@ try {
 }
 finally {
     Remove-Item Env:DATABASE_URL, Env:APP_ENV, Env:SECRET_KEY -ErrorAction SilentlyContinue
-    $migrationUrl = $null
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($urlPointer)
-    $secureUrl.Dispose()
 }
 ```
 
-The temporary `APP_ENV` and generated `SECRET_KEY` above exist only in that PowerShell process so Alembic can import the application metadata; they do not change Vercel's production settings or any application credentials. The migration URL is typed into a masked prompt and removed from the process environment after the command.
+The temporary settings above exist only to allow Alembic to load application metadata without applying the API runtime's production-only Transaction Pooler restriction. Use a proper local Python environment with backend dependencies installed. The URL is read into the process and removed afterward; PowerShell's ordinary `Read-Host` is not masked, so take care that the terminal is private and clear its history according to local policy. Alternatively, configure the URL through an approved secrets manager or secure shell environment. Never store the URL in `.env` files that are tracked or share it in chat.
 
-The chain currently contains the single head revision `0001_initial_schema` (root revision). On an empty database, it creates `users`, `machines`, and `predictions`, with their indexes and foreign key, and records the revision in `alembic_version`. The revision checks existing tables first; a partial legacy schema is rejected before changes. If all three legacy application tables already exist, it performs compatibility updates and alters/recreates tables while preserving rows, so inspect an existing non-empty database before applying. Do not downgrade production.
+Before applying a migration to a non-empty database, inspect the schema and back up required data. The revision rejects a partial legacy schema. A complete pre-existing legacy schema is adopted through compatibility alterations intended to preserve rows, but still requires review before execution. Do not use a downgrade as a production rollback; the downgrade to `base` drops the application tables.
 
-After `upgrade head` succeeds, run this read-only verification in the Supabase SQL Editor:
+After migration, run these read-only checks in the Supabase SQL Editor:
 
 ```sql
 SELECT version_num FROM alembic_version;
@@ -62,61 +77,57 @@ WHERE table_schema = 'public'
 ORDER BY table_name;
 ```
 
-Expected revision: `0001_initial_schema`; expected tables: all four listed above. Never point destructive or downgrade tests at production.
+Expected migration revision: `0001_initial_schema`. Expected application tables: `users`, `machines`, `predictions`, plus the Alembic version table. Record actual query output before marking migration verification complete.
 
 ## Vercel backend project
-1. Import the GitHub repository into Vercel as a project named for the API.
-2. Set **Root Directory** to `backend` (include files outside the root only if Vercel explicitly supports them; the model is bundled inside `backend/ml/`).
-3. Select the Python framework/runtime if not auto-detected. `backend/index.py` exports the existing FastAPI object from `app.main`; no duplicate route implementation is introduced. `backend/requirements.txt` contains production dependencies; `backend/requirements-dev.txt` is for test tooling only.
-4. Set protected environment variables:
-   - `APP_ENV=production`
-   - `DATABASE_URL` — Supabase Shared Transaction Pooler URL (port `6543`), copied from Supabase Connect; either PostgreSQL URL scheme is accepted
-   - `SECRET_KEY` — unique random value of at least 32 characters
-   - `ALGORITHM=HS256`
-   - `ACCESS_TOKEN_EXPIRE_MINUTES=1440`
-   - `MODEL_PATH=ml/model.joblib`
-   - `METADATA_PATH=ml/model_metadata.json`
-   - `FRONTEND_URL` — exact Vercel frontend HTTPS origin
-   - `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD`, `BOOTSTRAP_ADMIN_NAME`
-5. Deploy. No migration runs on API startup or request. Verify `/health` and `/ready` after migration and configuration.
-6. Create a unique admin password in the provider dashboard. The legacy `admin@predictive.com` user is disabled unless explicitly configured as bootstrap admin.
-7. Create operator accounts by calling `POST /auth/register` with the admin Bearer token and each operator's name, valid email, and password. The endpoint is admin-only, always assigns the `operator` role, and does not return an operator token. Public/self-registration is not enabled. Keep operator passwords in an approved password manager or provide them to operators through a secure channel; never commit or document them.
 
-The model and metadata files are each a few MB together and are bundled inside the backend project root. Training artifacts remain canonical in `ml/`; a backend test checks that their byte hashes match the copies in `backend/ml/`. After retraining, synchronize both backend copies and run the artifact integrity test before deploying. Vercel's current Python runtime documentation lists a 500 MB uncompressed standard function bundle limit; actual deployment build remains the final confirmation because dependencies contribute to bundle size.
+1. Create or open the backend Vercel project and set its root directory to `backend`.
+2. Use the Python runtime. `backend/index.py` exports the FastAPI app; application routes remain under `backend/app/`.
+3. Install production dependencies from `backend/requirements.txt`. `backend/requirements-dev.txt` is for development/test tools.
+4. Configure the following backend environment variable **names** in protected settings:
+   - `APP_ENV=production`
+   - `DATABASE_URL` — Supabase Shared Transaction Pooler URL on port `6543`
+   - `SECRET_KEY` — a unique random value meeting the configured minimum length
+   - `ALGORITHM`
+   - `ACCESS_TOKEN_EXPIRE_MINUTES`
+   - `MODEL_PATH`
+   - `METADATA_PATH`
+   - `FRONTEND_URL` — exact frontend HTTPS origin
+   - `BOOTSTRAP_ADMIN_EMAIL`
+   - `BOOTSTRAP_ADMIN_PASSWORD`
+   - `BOOTSTRAP_ADMIN_NAME`
+5. Deploy only after the target schema has been migrated. API startup does not run Alembic.
+6. Confirm `/health` and `/ready`. `/ready` requires both a database query and a valid model bundle.
+7. Operator accounts can be provisioned through `POST /auth/register` from an authenticated administrator session. This endpoint always creates the `operator` role. There is no public self-registration.
+
+The API bootstraps or refreshes the configured administrator account during startup when both bootstrap administrator settings are present. It disables the legacy `admin@predictive.com` account unless that address is the configured bootstrap administrator. Do not include any actual bootstrap credentials in deployment notes.
 
 ## Vercel frontend project
-1. Import the same GitHub repository as a second Vercel project.
-2. Set **Root Directory** to `frontend`, framework preset to Vite, build command to `npm run build`, and output directory to `dist`. `frontend/vercel.json` sets the Vite build/output and SPA route fallback.
-3. Set only `VITE_API_URL` in the frontend project, to the actual backend HTTPS base URL. Do not set `DATABASE_URL`, JWT secret, bootstrap password, or any database credential in frontend environment.
-4. Deploy/redeploy after setting the environment variable. Vite compiles this URL into static assets at build time.
-5. Set the backend `FRONTEND_URL` to the actual deployed frontend origin and redeploy the backend. CORS accepts only that configured origin.
+
+1. Create a separate Vercel project from the same repository with root directory `frontend`.
+2. Use the Vite preset, build command `npm run build`, and output directory `dist`; `frontend/vercel.json` supplies the SPA route fallback.
+3. Configure only `VITE_API_URL` for the frontend, set to the backend HTTPS origin. Never set database URLs, JWT signing secrets, or bootstrap credentials in the frontend project.
+4. Set backend `FRONTEND_URL` to the exact deployed frontend origin so CORS can allow that origin.
+5. Redeploy after changing build-time environment values; Vite compiles `VITE_API_URL` into the static frontend output.
 
 ## Production verification checklist
-Record only actual observations; use the deployment dashboard/browser and do not infer pass results from a local build.
 
-| Check | Expected | Actual |
+| Check | Expected evidence | Recorded status |
 |---|---|---|
-| Backend `/health` | HTTP 200 liveness | Not tested — no deployed URL |
-| Backend `/ready` | HTTP 200 with DB/model available | Not tested — no Supabase connection |
-| No-token protected endpoints | HTTP 401/403 | Not tested against production |
-| Invalid token | HTTP 401 | Not tested against production |
-| Operator machine mutation | HTTP 403 | Not tested against production |
-| Admin machine mutation | Success | Not tested against production |
-| Login/dashboard/machine selection | Browser flow works against API | Not tested — no deployed URL |
-| Prediction/history/refresh | Record persists in Supabase | Not tested — no Supabase connection |
-| Logout/protected route | Token cleared and login required | Not tested against production |
-| CORS and network | Browser requests HTTPS backend; only exact frontend origin allowed | Not tested against production |
-| Mobile and browser console | Core pages usable; no important errors | Not tested — no deployed URL |
-| Backend redeploy | Model and DB history remain available | Not tested against production |
+| Migration | Alembic head is `0001_initial_schema`; all expected tables are present | Not independently verified in this documentation update |
+| Backend `/health` | HTTP 200 liveness response | Not recorded here |
+| Backend `/ready` | HTTP 200 with database and model reported ready | Not recorded here |
+| Protected API without token | HTTP 401 | Not recorded against production |
+| Operator attempts admin operation | HTTP 403 | Not recorded against production |
+| Administrator admin operation | Expected authorized response | Not recorded against production |
+| Frontend login and navigation | Browser uses deployed API and authenticated views load | Not recorded as a complete live flow |
+| Prediction and history | A created prediction is persisted and appears after reload | Not independently verified against Supabase |
+| Logout and protected route | Session is cleared and unauthenticated route redirects to login | Local/mock behavior exercised; production behavior not recorded here |
+| CORS and network | HTTPS request to the intended API succeeds only from configured frontend origin | Not recorded here |
+| Mobile layout | Core deployed pages and navigation usable on target devices | Local/mock responsive inspection only; no physical-device production check |
+
+Update this table only with observations from the live provider and database. A local build or mocked API browser run must not be reported as a production pass.
 
 ## Optional local Docker deployment
-`docker-compose.yml` and Dockerfiles remain as an optional local/container alternative only. They are not required by the Vercel deployment target. Docker was not available during this verification and its build/runtime is not claimed as tested.
 
-## Current status
-Repository: [aghy07/predictive-maintenance2](https://github.com/aghy07/predictive-maintenance2). The public repository currently has only the initial commit at the inspected `main` revision, so local changes in this workspace (including Vercel configuration) must be pushed before Vercel can build them. This workspace has no available `git` CLI or connected Vercel/Supabase account. No Supabase project/database, Vercel deployment, or public URL has been verified. Do not mark this project production-ready until the checklist above is completed on the actual public deployments.
-
-### Phase 4 Vercel preparation
-- Added a FastAPI Vercel entrypoint, bundled ML artifacts, serverless-specific `NullPool` configuration, and separate psycopg settings for transaction pooling.
-- Migrations remain an explicit external step; no schema migration runs per invocation.
-- Production requirements are separated from test-only dependencies.
-- Live deployment, live PostgreSQL, CORS/auth, E2E, persistence, and mobile checks are pending.
+The repository includes Docker-related files as an optional local/container path. Vercel is the documented production target; a Docker build is not required for it. Record a Docker build/runtime result only after actually running it.

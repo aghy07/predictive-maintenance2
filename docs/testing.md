@@ -1,28 +1,74 @@
-# Testing summary
+# Testing and verification
 
-## White-box testing
-The suite covers authentication and authorization, prediction validation, model artifact caching and integrity failures, risk-band boundaries, machine archive behavior, one-inference persistence, training-range metadata, dashboard aggregation, SQLite foreign-key enforcement, fresh and legacy Alembic upgrades, downgrade behavior on scratch databases, schema drift, PostgreSQL DDL compilation, and ML data/training metadata. Run the full suite from the project root using a compatible Python environment:
+This page distinguishes automated local tests, local browser checks, and checks that require the deployed services. A local or mocked pass is not evidence of live Supabase/Vercel behavior.
+
+## Automated backend tests
+
+Run the full Python suite from the repository root:
 
 ```powershell
 python -m pytest -q
 ```
 
-PostgreSQL DDL is compiled in tests, but no live PostgreSQL service is available in the current verification environment. Do not interpret this as completed PostgreSQL integration validation.
+The last recorded full suite result during the operator-provisioning work was **84 passed**, with one dependency deprecation warning. The documentation-only update did not rerun Python tests.
 
-The full Python test suite passes: **73 passed** (with existing dependency deprecation warnings). The focused tests cover the Vercel entrypoint, serverless engine options, production DB URL validation, and matching model-artifact hashes. The frontend TypeScript/Vite production build passes with an explicit HTTPS test API base URL; Vite reports a **640.63 kB** minified JavaScript chunk, above its 500 kB advisory threshold. This is non-fatal. The Docker frontend image uses a multi-stage production build and Nginx static serving, but the image itself has not been built because Docker is unavailable.
+The suite covers:
 
-## Black-box testing
-See [black-box-testing.md](./black-box-testing.md) for manual end-to-end scenarios. The end-user workflow is login, dashboard access, machine review, sensor submission, prediction/risk/recommendation inspection, and history review. These are manual product scenarios, not proof that a browser-driven end-to-end automation suite exists.
+- Login, token validation, active accounts, and administrator/operator authorization.
+- Admin-only operator provisioning and denied access for anonymous/operator requests.
+- Request validation, including invalid/non-finite sensor input and missing or archived machines.
+- Risk-band boundaries, recommendations, and training-range warnings.
+- Model artifact loading, caching, integrity checks, and one inference per prediction.
+- Prediction persistence, machine archival, and latest-per-machine dashboard aggregation.
+- SQLite foreign keys, fresh/legacy Alembic behavior, schema checks, and PostgreSQL DDL compilation.
+- Synthetic dataset, training metadata, and matching model artifact hashes.
 
-The UI reports loading, retryable error, and empty states for dashboard, machine selection/list, and prediction history. Run the frontend production build from `frontend`:
+The PostgreSQL DDL compilation and SQLite tests are not live PostgreSQL integration tests.
+
+## Frontend build and type checking
+
+From `frontend/`, set the build-time API URL to a non-secret HTTPS URL and run:
 
 ```powershell
-cd frontend
-$env:VITE_API_URL = "https://api.example.com"
+$env:VITE_API_URL = "https://your-backend.example"
 $env:APP_ENV = "production"
+npm ci
 npm run build
 ```
 
-No Supabase project or Vercel deployment is connected in the current environment. Live PostgreSQL migration/CRUD, Vercel Function packaging/runtime, cloud deployment, E2E browser testing, mobile-device testing, and deployment-level persistence are still outstanding. Docker is optional for the selected Vercel deployment path.
+`npm run build` runs the environment check, TypeScript `tsc -b`, and Vite production build. The latest recorded build passed; Vite reported a non-fatal minified JavaScript chunk-size advisory above 500 kB. No separate lint script is currently defined in `frontend/package.json`.
 
-The checked-in model and dataset are synthetic classroom assets; passing these tests and the build does not establish real-world predictive accuracy or operational safety. No live deployment, load, or real-equipment acceptance test has been performed.
+## Browser and responsive checks
+
+During the frontend presentation phase, a browser session exercised login with a mocked response, dashboard rendering, machine creation, prediction submission/result, history, mobile navigation, and logout. API responses were mocked; this did not verify live authentication, API data, or persistence.
+
+The core pages were checked using browser viewports targeting 320, 375, 390, 768, 1024, and 1280 CSS pixels. The browser harness did not always report exactly the requested width, so interpret this as a local responsive inspection rather than a physical-device compatibility certification. No unintended document-width overflow or JavaScript console errors were observed during those mocked checks. React Router printed non-fatal future-flag warnings.
+
+There is no committed automated browser E2E suite.
+
+## Live integration and production checks
+
+The following require the actual Supabase/Vercel services and must be recorded from a live run before being reported as passed:
+
+| Check | Evidence required | Status in last recorded verification |
+|---|---|---|
+| Supabase schema | Confirm Alembic head and application tables in the target database | Not independently verified here |
+| PostgreSQL integration | Connect and perform API CRUD against the deployed PostgreSQL database | Not run as part of the local automated suite |
+| Production readiness | `/ready` reports both database and model as available | Not recorded |
+| Production authentication/authorization | Verify login, anonymous denial, operator denial, and admin access against the deployed API | Not recorded as a complete production test |
+| Production prediction/history | Create a result and confirm it remains in history after reload | Not independently verified |
+| Production CORS/network | Confirm browser uses the configured HTTPS backend and allowed frontend origin | Not recorded |
+| Production responsive/browser smoke | Exercise deployed views and navigation in target browsers/devices | Not recorded as a production test |
+| Load and operational acceptance | Measure load behavior and validate procedures with real equipment/technicians | Not performed |
+
+Production URLs provided for project documentation:
+
+- Frontend: <https://predictive-maintenance2-sy6k.vercel.app>
+- Backend: <https://predictive-maintenance2-pgwe.vercel.app>
+- API docs: <https://predictive-maintenance2-pgwe.vercel.app/docs>
+
+Their inclusion above identifies the target locations; it does not turn local or mocked checks into production acceptance evidence. See [deployment.md](./deployment.md) for service configuration and the deployment verification log.
+
+## Interpretation
+
+The dataset and labels are synthetic classroom assets. Passing code tests, TypeScript, or browser checks does not establish real-world predictive accuracy, safety, or fitness for sole-source maintenance decisions. See [ml-pipeline.md](./ml-pipeline.md) for the dataset design and evaluation limitations.

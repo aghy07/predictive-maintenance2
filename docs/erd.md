@@ -30,6 +30,12 @@
                              | model_version        |
                              | created_at           |
                              +----------------------+
+
++-------------------+
+| alembic_version   |
+|-------------------|
+| version_num PK    |
++-------------------+
 ```
 
 ## Relationships and lifecycle
@@ -65,5 +71,7 @@ All timestamp columns use timezone-aware SQLAlchemy types. PostgreSQL persists t
 ## Schema source and migration
 
 The declarative models are in `backend/app/models/`; Alembic revisions under `backend/alembic/versions/` create and evolve the schema. Application startup does not call `Base.metadata.create_all`. Run `alembic upgrade head` before serving traffic. The initial revision can adopt the application's prior unversioned SQLite schema while preserving existing records, then normal subsequent schema changes should use new revisions.
+
+Alembic's `alembic_version` table records the applied revision; it is migration metadata, not an application entity or relationship.
 
 The migration's downgrade to `base` drops the application tables. Back up production data and do not use that downgrade as a routine rollback.

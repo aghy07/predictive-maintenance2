@@ -1,7 +1,7 @@
 # Black-box testing
 
 ## Goal and scope
-These manual scenarios validate externally observable behavior through the UI/API contract. They are not a claim that browser-driven end-to-end automation has been implemented or run.
+These scenarios define externally observable behavior through the UI/API contract. The latest recorded browser interaction checks used mocked API responses; they do not establish live API, Supabase persistence, or production end-to-end behavior. There is no committed automated browser E2E suite.
 
 ## Acceptance scenarios
 | Scenario | Action | Expected result |
@@ -30,6 +30,6 @@ These manual scenarios validate externally observable behavior through the UI/AP
 | Out-of-training-range but valid value | A finite value above the recorded training range | Accepted with extrapolation warning; not treated as a physical limit |
 
 ## Deployment smoke check
-Apply Alembic to the Supabase database using a Direct or Session Pooler migration URL, deploy the Vercel backend, and verify `/ready` before deploying or testing the frontend. Then exercise login, machine listing, one prediction, and prediction history through the production browser flow.
+Apply Alembic to the Supabase database using a Direct or Session Pooler migration URL, then verify `/ready` before relying on the API. Exercise login, machine listing, one prediction, and prediction history through the production browser flow. Do not use the Transaction Pooler for migrations.
 
-Actual production scenario results must be recorded from a live deployment; no such deployment has been verified in the current environment. Passing these scenarios does not establish production readiness. The model and dataset are synthetic; live PostgreSQL integration, real-equipment validation, load testing, and operational safety acceptance remain outstanding.
+Production URLs are documented in [deployment.md](./deployment.md); live scenario results are not recorded here. Passing local or mocked scenarios does not establish production readiness. The model and dataset are synthetic; live PostgreSQL integration, real-equipment validation, load testing, and operational safety acceptance remain outstanding.

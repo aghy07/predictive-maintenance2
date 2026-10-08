@@ -1,5 +1,8 @@
 # White-box testing
 
+## Recorded execution status
+The last recorded full backend suite run during the operator-provisioning work completed with **84 passed** and one dependency deprecation warning. This documentation update did not rerun the suite. The coverage inventory below describes tested behaviors; it is not a claim that production integration tests passed.
+
 ## Testing objective
 White-box testing validates internal logic, decision branches, and failure paths to ensure the app behaves correctly under both normal and exceptional conditions.
 

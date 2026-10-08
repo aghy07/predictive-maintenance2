@@ -32,9 +32,9 @@ The system follows the pattern: `Frontend -> REST API -> Backend -> ML Model -> 
            |
            v
 +---------------------+
-| SQLite / Postgres   |
+| PostgreSQL          |
 | users / machines    |
-| predictions          |
+| predictions         |
 +---------------------+
 ```
 
@@ -78,6 +78,7 @@ Database deployment
 Production runtime:
   Vercel static frontend -> Vercel Python Function (FastAPI ASGI)
   -> Supabase PostgreSQL via psycopg pooler -> bundled Random Forest artifacts
+Local development and automated tests may use SQLite. Production database schema is applied with Alembic before API startup.
 ```
 
 ## 4. ERD
@@ -122,7 +123,7 @@ One machine may have many predictions. Users are not currently linked to machine
 - Database: persistence of users, machines, and prediction history
 
 ## 6. Design decisions
-- SQLite is used for local development and fast iteration.
+- SQLite is used for local development and automated tests; production uses Supabase PostgreSQL.
 - PostgreSQL uses the configured SQLAlchemy `DATABASE_URL` and psycopg 3; no dialect is hardcoded into database services.
 - Alembic owns production schema creation and evolution; the initial revision can adopt the prior unversioned schema without discarding rows.
 - Vercel serverless instances use SQLAlchemy `NullPool`; psycopg prepared statements are disabled for transaction-pooler requests. Migrations run as a separate deployment step.
